@@ -1,0 +1,282 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
+
+typedef struct {
+    int day, month, year;
+} Date;
+
+typedef struct {
+    char name[50];
+    Date entryDate;
+    Date expiryDate;
+    int quantity;
+} Medication;
+
+int isExpired(Medication m, Date current);
+int daysUntilExpiry(Medication m, Date current);
+void inputDate(Date *d);
+void inputMedication(Medication *tabM, int *n);
+void displayMedication(Medication m);
+void displayAll(Medication tabM[], int n, Date today);
+void displayExpiringSoon(Medication tabM[], int n, Date today);
+void removeExpired(Medication tabM[], int *n, Date current);
+void saveToFile(Medication tabM[], int n, const char *filename);
+int loadFromFile(Medication tabM[], const char *filename);
+void searchMedication(Medication tabM[], int n);
+void editMedication(Medication tabM[], int n);
+void sortMedications(Medication tabM[], int n);
+Date getCurrentDate();
+
+int isExpired(Medication m, Date d) {
+    if (m.expiryDate.year < d.year) return 1;
+    if (m.expiryDate.year == d.year && m.expiryDate.month < d.month) return 1;
+    if (m.expiryDate.year == d.year && m.expiryDate.month == d.month && m.expiryDate.day < d.day) return 1;
+    return 0;
+}
+
+int daysUntilExpiry(Medication m, Date d) {
+    int totalM = m.expiryDate.year * 365 + m.expiryDate.month * 30 + m.expiryDate.day;
+    int totalD = d.year * 365 + d.month * 30 + d.day;
+    return totalM - totalD;
+}
+
+void inputDate(Date *d) {
+    scanf("%d %d %d", &d->day, &d->month, &d->year);
+}
+
+void inputMedication(Medication *tabM, int *n) {
+    Medication newMed;
+    printf("Enter name: ");
+    scanf(" %[^\n]", newMed.name);
+    printf("Entry date (DD MM YYYY): ");
+    inputDate(&newMed.entryDate);
+    printf("Expiry date (DD MM YYYY): ");
+    inputDate(&newMed.expiryDate);
+    printf("Quantity: ");
+    scanf("%d", &newMed.quantity);
+
+    for (int i = 0; i < *n; i++) {
+        if (strcasecmp(tabM[i].name, newMed.name) == 0 &&
+            tabM[i].expiryDate.day == newMed.expiryDate.day &&
+            tabM[i].expiryDate.month == newMed.expiryDate.month &&
+            tabM[i].expiryDate.year == newMed.expiryDate.year) {
+            printf("Duplicate found, quantity updated.\n");
+            tabM[i].quantity += newMed.quantity;
+            return;
+        }
+    }
+
+    tabM[*n] = newMed;
+    (*n)++;
+}
+
+void displayMedication(Medication m) {
+    printf("Name: %s | Entry: %02d/%02d/%04d | Expiry: %02d/%02d/%04d | Qty: %d\n",
+        m.name,
+        m.entryDate.day, m.entryDate.month, m.entryDate.year,
+        m.expiryDate.day, m.expiryDate.month, m.expiryDate.year,
+        m.quantity);
+}
+
+void displayAll(Medication tabM[], int n, Date today) {
+    if (n == 0) {
+        printf("No medications in stock.\n");
+        return;
+    }
+
+    for (int i = 0; i < n; i++) {
+        displayMedication(tabM[i]);
+        int days = daysUntilExpiry(tabM[i], today);
+        if (days >= 0 && days <= 30) {
+            printf("⚠️  Warning: '%s' expires in %d day(s)!\n", tabM[i].name, days);
+        }
+    }
+
+    printf("\n--- Medications expiring in 7 days or less ---\n");
+    displayExpiringSoon(tabM, n, today);
+}
+
+void displayExpiringSoon(Medication tabM[], int n, Date today) {
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+        int days = daysUntilExpiry(tabM[i], today);
+        if (days >= 0 && days <= 7) {
+            printf("⚠️  '%s' expires in %d day(s)!\n", tabM[i].name, days);
+            found = 1;
+        }
+    }
+    if (!found) {
+        printf("No medications expiring soon.\n");
+    }
+}
+
+void removeExpired(Medication tabM[], int *n, Date current) {
+    int i = 0, removed = 0;
+    while (i < *n) {
+        if (isExpired(tabM[i], current)) {
+            printf("Removed expired: %s\n", tabM[i].name);
+            for (int j = i; j < *n - 1; j++) {
+                tabM[j] = tabM[j + 1];
+            }
+            (*n)--;
+            removed++;
+        } else {
+            i++;
+        }
+    }
+    if (!removed) printf("No expired medications found.\n");
+}
+
+void saveToFile(Medication tabM[], int n, const char *filename) {
+    FILE *f = fopen(filename, "w");
+    for (int i = 0; i < n; i++) {
+        fprintf(f, "%s;%d %d %d;%d %d %d;%d\n", tabM[i].name,
+            tabM[i].entryDate.day, tabM[i].entryDate.month, tabM[i].entryDate.year,
+            tabM[i].expiryDate.day, tabM[i].expiryDate.month, tabM[i].expiryDate.year,
+            tabM[i].quantity);
+    }
+    fclose(f);
+    printf("Data saved to '%s'.\n", filename);
+}
+
+int loadFromFile(Medication tabM[], const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if (!f) return 0;
+
+    int count = 0;
+    while (fscanf(f, " %[^\n;];%d %d %d;%d %d %d;%d\n",
+                  tabM[count].name,
+                  &tabM[count].entryDate.day, &tabM[count].entryDate.month, &tabM[count].entryDate.year,
+                  &tabM[count].expiryDate.day, &tabM[count].expiryDate.month, &tabM[count].expiryDate.year,
+                  &tabM[count].quantity) == 8) {
+        count++;
+    }
+
+    fclose(f);
+    return count;
+}
+
+void searchMedication(Medication tabM[], int n) {
+    char target[50];
+    printf("Enter name to search: ");
+    scanf(" %[^\n]", target);
+
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+        if (strcasecmp(tabM[i].name, target) == 0) {
+            displayMedication(tabM[i]);
+            found = 1;
+        }
+    }
+
+    if (!found) {
+        printf("Not found.\n");
+    }
+}
+
+void editMedication(Medication tabM[], int n) {
+    char target[50];
+    printf("Enter name to edit: ");
+    scanf(" %[^\n]", target);
+
+    for (int i = 0; i < n; i++) {
+        if (strcasecmp(tabM[i].name, target) == 0) {
+            printf("Editing %s...\n", tabM[i].name);
+            printf("New details:\n");
+            printf("Entry date (DD MM YYYY): ");
+            inputDate(&tabM[i].entryDate);
+            printf("Expiry date (DD MM YYYY): ");
+            inputDate(&tabM[i].expiryDate);
+            printf("Quantity: ");
+            scanf("%d", &tabM[i].quantity);
+            return;
+        }
+    }
+    printf("Not found.\n");
+}
+
+void sortMedications(Medication tabM[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            int a = tabM[j].expiryDate.year * 10000 + tabM[j].expiryDate.month * 100 + tabM[j].expiryDate.day;
+            int b = tabM[j + 1].expiryDate.year * 10000 + tabM[j + 1].expiryDate.month * 100 + tabM[j + 1].expiryDate.day;
+            if (a > b) {
+                Medication temp = tabM[j];
+                tabM[j] = tabM[j + 1];
+                tabM[j + 1] = temp;
+            }
+        }
+    }
+}
+
+Date getCurrentDate() {
+    Date d;
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    d.day = t->tm_mday;
+    d.month = t->tm_mon + 1;
+    d.year = t->tm_year + 1900;
+    return d;
+}
+
+int main() {
+    Medication tabM[100];
+    int n = 0, choice;
+    Date today;
+    const char *FILENAME = "medications.txt";
+
+    today = getCurrentDate();
+    printf("Today's date is: %02d/%02d/%04d\n", today.day, today.month, today.year);
+
+    n = loadFromFile(tabM, FILENAME);
+    printf("Loaded %d medication(s) from file.\n", n);
+
+    do {
+        printf("\n--- Menu ---\n");
+        printf("1. Add Medication\n");
+        printf("2. Display All\n");
+        printf("3. Remove Expired\n");
+        printf("4. Search\n");
+        printf("5. Edit\n");
+        printf("6. Sort by Expiry\n");
+        printf("7. Save and Exit\n");
+        printf("8. Save Only\n");
+        printf("Your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:
+                inputMedication(tabM, &n);
+                break;
+            case 2:
+                displayAll(tabM, n, today);
+                break;
+            case 3:
+                removeExpired(tabM, &n, today);
+                break;
+            case 4:
+                searchMedication(tabM, n);
+                break;
+            case 5:
+                editMedication(tabM, n);
+                break;
+            case 6:
+                sortMedications(tabM, n);
+                printf("Sorted by expiry date.\n");
+                break;
+            case 7:
+                saveToFile(tabM, n, FILENAME);
+                printf("Exiting program.\n");
+                return 0;
+            case 8:
+                saveToFile(tabM, n, FILENAME);
+                break;
+            default:
+                printf("Invalid option.\n");
+        }
+    } while (1);
+
+    return 0;
+}
